@@ -1509,6 +1509,7 @@ input[type=number]::-webkit-inner-spin-button{display:none;}
           <button class="cv-filt on" id="cvf-all" onclick="cvSetFilt('all')">전체</button>
           <button class="cv-filt" id="cvf-hcp" onclick="cvSetFilt('hcp')">일반 HCP</button>
           <button class="cv-filt" id="cvf-comp" onclick="cvSetFilt('comp')">동반 HCP</button>
+          <button class="cv-filt" id="cvf-speaker" onclick="cvSetFilt('speaker')">좌연자</button>
           <button class="cv-filt" id="cvf-ci" onclick="cvSetFilt('ci')">체크인 완료</button>
           <button class="cv-filt" id="cvf-nci" onclick="cvSetFilt('nci')">미체크인</button>
           <button class="cv-filt" id="cvf-cancel" onclick="cvSetFilt('cancel')">불참</button>
@@ -1894,20 +1895,21 @@ function loadClientView(id){
   setP('p4','p4',p=>p.d2);
   cvPage=1;cvFilt='all';cvSrch='';
   document.getElementById('cv-search').value='';
-  ['all','hcp','comp','ci','nci','cancel'].forEach(f=>{const el=document.getElementById(`cvf-${f}`);if(el)el.classList.toggle('on',f==='all');});
+  ['all','hcp','comp','speaker','ci','nci','cancel'].forEach(f=>{const el=document.getElementById(`cvf-${f}`);if(el)el.classList.toggle('on',f==='all');});
   renderCvPt(ev);
 }
 function cvSetFilt(f){
   cvFilt=f;cvPage=1;
-  ['all','hcp','comp','ci','nci','cancel'].forEach(id=>{const el=document.getElementById(`cvf-${id}`);if(el)el.classList.toggle('on',id===f);});
+  ['all','hcp','comp','speaker','ci','nci','cancel'].forEach(id=>{const el=document.getElementById(`cvf-${id}`);if(el)el.classList.toggle('on',id===f);});
   const ev=getEv(cvEvId);if(ev)renderCvPt(ev);
 }
 function cvFilterPt(){cvSrch=document.getElementById('cv-search').value.toLowerCase();cvPage=1;const ev=getEv(cvEvId);if(ev)renderCvPt(ev);}
 function getCvFiltered(ev){
   return(ev.pts||[]).filter(p=>{
     if(cvSrch&&!p.name.toLowerCase().includes(cvSrch)&&!p.hosp.toLowerCase().includes(cvSrch))return false;
-    if(cvFilt==='hcp')return !p.isComp&&!p.isCancelled;
+    if(cvFilt==='hcp')return !p.isComp&&!p.isSpeaker&&!p.isCancelled;
     if(cvFilt==='comp')return p.isComp&&!p.isCancelled;
+    if(cvFilt==='speaker')return !!p.isSpeaker&&!p.isCancelled;
     if(cvFilt==='ci')return p.ci&&!p.isCancelled;
     if(cvFilt==='nci')return !p.ci&&!p.isCancelled;
     if(cvFilt==='cancel')return p.isCancelled||!!p.absent; // 불참 필터
