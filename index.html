@@ -1225,7 +1225,7 @@ input[type=number]::-webkit-inner-spin-button{display:none;}
           <table class="pt-table">
             <thead>
               <tr style="background:var(--bg2);">
-                <th colspan="7" style="font-size:12px;color:var(--ink3);font-weight:400;letter-spacing:0;padding:6px 12px;">현재 페이지 전체</th>
+                <th colspan="8" style="font-size:12px;color:var(--ink3);font-weight:400;letter-spacing:0;padding:6px 12px;">현재 페이지 전체</th>
                 <th style="text-align:center;padding:5px 3px;"><button onclick="bulkCheck('ci')" style="padding:3px 7px;background:var(--blue-light);color:var(--blue);border:1px solid var(--blue-mid);border-radius:5px;cursor:pointer;font-size:11px;white-space:nowrap;font-family:'Noto Sans KR',sans-serif;">전체✓</button></th>
                 <th style="text-align:center;padding:5px 3px;"><button onclick="bulkCheck('d1')" style="padding:3px 7px;background:var(--green-light);color:var(--green);border:1px solid #bbf7d0;border-radius:5px;cursor:pointer;font-size:11px;white-space:nowrap;font-family:'Noto Sans KR',sans-serif;">전체✓</button></th>
                 <th style="text-align:center;padding:5px 3px;"><button onclick="bulkCheck('d2')" style="padding:3px 7px;background:var(--purple-light);color:var(--purple);border:1px solid #ddd6fe;border-radius:5px;cursor:pointer;font-size:11px;white-space:nowrap;font-family:'Noto Sans KR',sans-serif;">전체✓</button></th>
@@ -1233,7 +1233,7 @@ input[type=number]::-webkit-inner-spin-button{display:none;}
               </tr>
               <tr>
                 <th>이름</th><th>병원</th><th>휴대폰</th><th>지점</th><th>담당자</th>
-                <th>구분</th><th>숙박</th>
+                <th>구분</th><th>숙박</th><th>객실타입</th>
                 <th style="color:var(--blue);text-align:center">체크인</th>
                 <th style="color:var(--green);text-align:center">DAY 1</th>
                 <th style="color:var(--purple);text-align:center">DAY 2</th>
@@ -1574,6 +1574,17 @@ function _initFirebaseDb(){
         return Object.values(val);
       }catch(e){console.warn('fbLoad:',e);return null;}
     };
+    // 실시간 리스너: 다른 기기에서 변경 시 자동 반영
+    _db.ref('events').on('value', function(snap){
+      if(!snap.exists()) return;
+      var fbEvs=Object.values(snap.val());
+      events=fbEvs;
+      localStorage.setItem('sops_events',JSON.stringify(events));
+      renderSb && renderSb();
+      renderHistSb && renderHistSb();
+      if(aId && getEv(aId)) loadDash(aId);
+      if(cvEvId && getEv(cvEvId)) loadClientView(cvEvId);
+    });
     window._fbDelete=async function(id){
       try{await _db.ref('events/'+String(id)).remove();}catch(e){}
     };
@@ -1865,34 +1876,43 @@ function loadClientView(id){
   // 좌연자: isSpeaker 또는 type==='speaker' 등 — 현재 데이터엔 별도 필드 없으므로 0 표시 (추후 확장 가능)
   const absentTotal=pts.filter(p=>p.absent||p.isCancelled).length;
 
-  function setP(key,pfx,filterFn){
-    const d=ev[key]||{};const t=d.total||0;
-    document.getElementById(`cv-${pfx}-total`).textContent=t;
-    // 좌연자 — 데이터 구조에 speaker 필드 없으면 0
+  // 관리자 페이지와 동일하게 참가자 리스트 직접 계산
+  function calcPanel(subset){
+    const h=subset.filter(p=>!p.isComp&&!p.isSpeaker).length;
+    const c=subset.filter(p=>p.isComp).length;
+    const s=subset.filter(p=>p.isSpeaker).length;
+    return {h,c,s,total:h+c+s};
+  }
+  const active=pts.filter(p=>!p.isCancelled&&!p.absent);
+  const p1c=calcPanel(active);
+  const p2c=calcPanel(active.filter(p=>p.ci));
+  const p3c=calcPanel(active.filter(p=>p.d1));
+  const p4c=calcPanel(active.filter(p=>p.d2));
+  const p1rooms=active.filter(p=>p.stay===1).length;
+  const p2rooms=active.filter(p=>p.ci&&p.stay===1).length;
+  const absentCnt=pts.filter(p=>p.absent||p.isCancelled).length;
+
+  function setP(pfx,calc,rooms,absentCnt){
+    const totalEl=document.getElementById(`cv-${pfx}-total`);
+    if(totalEl) totalEl.textContent=calc.total;
     const speakerEl=document.getElementById(`cv-${pfx}-speaker`);
-    if(speakerEl) speakerEl.textContent=(d.speaker||0)+' 명';
-    document.getElementById(`cv-${pfx}-hcp`).textContent=(d.hcp||0)+' 명';
-    document.getElementById(`cv-${pfx}-comp`).textContent=(d.comp||0)+' 명';
+    if(speakerEl) speakerEl.textContent=calc.s+' 명';
+    const hEl=document.getElementById(`cv-${pfx}-hcp`);
+    if(hEl) hEl.textContent=calc.h+' 명';
+    const cEl=document.getElementById(`cv-${pfx}-comp`);
+    if(cEl) cEl.textContent=calc.c+' 명';
     const roomsEl=document.getElementById(`cv-${pfx}-rooms`);
-    if(roomsEl) roomsEl.textContent=(d.rooms||0)+' 실';
-    // 불참: 참가자 리스트 기준으로 직접 계산
+    if(roomsEl) roomsEl.textContent=(rooms||0)+' 실';
     const absentEl=document.getElementById(`cv-${pfx}-absent`);
-    if(absentEl){
-      if(filterFn){
-        const cnt=pts.filter(p=>(p.absent||p.isCancelled)&&filterFn(p)).length;
-        absentEl.textContent=cnt+' 명';
-      } else {
-        absentEl.textContent=absentTotal+' 명';
-      }
-    }
-    const base=(ev.p1||{}).total||1;
-    const pct=base>0?Math.min(100,Math.round(t/base*100)):0;
+    if(absentEl) absentEl.textContent=absentCnt+' 명';
+    const base=p1c.total||1;
+    const pct=base>0?Math.min(100,Math.round(calc.total/base*100)):0;
     const bar=document.getElementById(`cv-${pfx}-bar`);if(bar)bar.style.width=pct+'%';
   }
-  setP('p1','p1',null);
-  setP('p2','p2',p=>p.ci);
-  setP('p3','p3',p=>p.d1);
-  setP('p4','p4',p=>p.d2);
+  setP('p1',p1c,p1rooms,absentCnt);
+  setP('p2',p2c,p2rooms,absentCnt);
+  setP('p3',p3c,0,absentCnt);
+  setP('p4',p4c,0,absentCnt);
   cvPage=1;cvFilt='all';cvSrch='';
   document.getElementById('cv-search').value='';
   ['all','hcp','comp','speaker','ci','nci','cancel'].forEach(f=>{const el=document.getElementById(`cvf-${f}`);if(el)el.classList.toggle('on',f==='all');});
@@ -1906,7 +1926,7 @@ function cvSetFilt(f){
 function cvFilterPt(){cvSrch=document.getElementById('cv-search').value.toLowerCase();cvPage=1;const ev=getEv(cvEvId);if(ev)renderCvPt(ev);}
 function getCvFiltered(ev){
   return(ev.pts||[]).filter(p=>{
-    if(cvSrch&&!p.name.toLowerCase().includes(cvSrch)&&!p.hosp.toLowerCase().includes(cvSrch))return false;
+    if(cvSrch&&!p.name.toLowerCase().includes(cvSrch)&&!p.hosp.toLowerCase().includes(cvSrch)&&!(p.phone||'').toLowerCase().includes(cvSrch))return false;
     if(cvFilt==='hcp')return !p.isComp&&!p.isSpeaker&&!p.isCancelled;
     if(cvFilt==='comp')return p.isComp&&!p.isCancelled;
     if(cvFilt==='speaker')return !!p.isSpeaker&&!p.isCancelled;
@@ -2385,7 +2405,7 @@ function filterPt(){ptSrch=document.getElementById('pt-search').value.toLowerCas
 function getFiltered(ev){
   return(ev.pts||[]).filter(p=>{
     const srch=ptSrch;
-    if(srch&&!p.name.toLowerCase().includes(srch)&&!p.hosp.toLowerCase().includes(srch)&&!(p.manager||'').toLowerCase().includes(srch))return false;
+    if(srch&&!p.name.toLowerCase().includes(srch)&&!p.hosp.toLowerCase().includes(srch)&&!(p.manager||'').toLowerCase().includes(srch)&&!(p.phone||'').toLowerCase().includes(srch))return false;
     if(ptFilt==='hcp')return !p.isComp&&!p.isCancelled&&!p.isSpeaker;
     if(ptFilt==='comp')return p.isComp&&!p.isCancelled;
     if(ptFilt==='speaker')return !!p.isSpeaker;
@@ -2430,6 +2450,7 @@ function renderPt(ev){
       <td style="font-size:11px;color:var(--ink2)">${p.manager||'—'}</td>
       <td>${typeCell}</td>
       <td>${stayHtml(p)}</td>
+      <td style="font-size:11px;color:var(--ink2)">${p.roomType||'—'}</td>
       <td class="tc"><div class="pt-chk chk-blue ${p.ci?'on':''}" onclick="togglePtField(${idx},'ci')" style="margin:auto">
         <svg width="9" height="7" viewBox="0 0 10 8" fill="none"><path d="M1 4l3 3 5-6" stroke="white" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
       </div></td>
