@@ -1,6 +1,22 @@
 <!DOCTYPE html>
 <html lang="ko">
 <head>
+<!-- Firebase SDK 8.x (unpkg CDN) -->
+<script src="https://unpkg.com/firebase@8.10.1/firebase-app.js"></script>
+<script src="https://unpkg.com/firebase@8.10.1/firebase-database.js"></script>
+<script>
+  firebase.initializeApp({
+    apiKey: "AIzaSyDZFFSgDkTnIUie6T7HjxhWxNpwNjazXw0",
+    authDomain: "symposium-283b6.firebaseapp.com",
+    databaseURL: "https://symposium-283b6-default-rtdb.asia-southeast1.firebasedatabase.app",
+    projectId: "symposium-283b6",
+    storageBucket: "symposium-283b6.firebasestorage.app",
+    messagingSenderId: "580518024388",
+    appId: "1:580518024388:web:e17eddd83d5dd2df876591"
+  });
+  window._db = firebase.database();
+  console.log('Firebase OK');
+</script>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
 <title>SYMPOSIUM OPS</title>
@@ -1543,81 +1559,7 @@ input[type=number]::-webkit-inner-spin-button{display:none;}
 </div><!-- /client-view -->
 
 
-<!-- Firebase SDK - Realtime Database -->
-<script>
-function _initFirebaseDb(){
-  try{
-    if(!firebase.apps.length){
-      firebase.initializeApp({
-        apiKey:"AIzaSyDZFFSgDkTnIUie6T7HjxhWxNpwNjazXw0",
-        authDomain:"symposium-283b6.firebaseapp.com",
-        databaseURL:"https://symposium-283b6-default-rtdb.asia-southeast1.firebasedatabase.app",
-        projectId:"symposium-283b6",
-        storageBucket:"symposium-283b6.firebasestorage.app",
-        messagingSenderId:"580518024388",
-        appId:"1:580518024388:web:e17eddd83d5dd2df876591"
-      });
-    }
-    var _db=firebase.database();
-    window._fbSave=async function(ev){
-      try{
-        var d=JSON.parse(JSON.stringify(ev));
-        delete d._origXlsx;
-        await _db.ref('events/'+String(ev.id)).set(d);
-      }catch(e){console.warn('fbSave:',e);}
-    };
-    window._fbLoadAll=async function(){
-      try{
-        var snap=await _db.ref('events').get();
-        if(!snap.exists()) return [];
-        var val=snap.val();
-        return Object.values(val);
-      }catch(e){console.warn('fbLoad:',e);return null;}
-    };
-    // 실시간 리스너: 다른 기기에서 변경 시 자동 반영
-    _db.ref('events').on('value', function(snap){
-      if(!snap.exists()) return;
-      var fbEvs=Object.values(snap.val());
-      events=fbEvs;
-      localStorage.setItem('sops_events',JSON.stringify(events));
-      renderSb && renderSb();
-      renderHistSb && renderHistSb();
-      if(aId && getEv(aId)) loadDash(aId);
-      if(cvEvId && getEv(cvEvId)) loadClientView(cvEvId);
-    });
-    window._fbDelete=async function(id){
-      try{await _db.ref('events/'+String(id)).remove();}catch(e){}
-    };
-    window.dispatchEvent(new Event('fb-ready'));
-    console.log('Firebase Realtime DB OK');
-  }catch(e){console.warn('Firebase init:',e);}
-}
-function _loadScript(url, cb, errCb){
-  var s=document.createElement('script');
-  s.src=url;s.onload=cb;s.onerror=errCb||function(){};
-  document.head.appendChild(s);
-}
-_loadScript(
-  'https://www.gstatic.com/firebasejs/9.22.0/firebase-app-compat.js',
-  function(){
-    _loadScript(
-      'https://www.gstatic.com/firebasejs/9.22.0/firebase-database-compat.js',
-      _initFirebaseDb,
-      function(){
-        _loadScript('https://unpkg.com/firebase@9.22.0/database/dist/index.compat.js',_initFirebaseDb);
-      }
-    );
-  },
-  function(){
-    _loadScript(
-      'https://unpkg.com/firebase@9.22.0/app/dist/index.compat.js',
-      function(){
-        _loadScript('https://unpkg.com/firebase@9.22.0/database/dist/index.compat.js',_initFirebaseDb);
-      }
-    );
-  }
-);
-</script>
+
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <script>
 const ADMIN_PW = 'admin1234'; // ← 관리자 비밀번호 변경 여기서
@@ -1631,7 +1573,7 @@ const CATS=[
 ];
 
 /* ══ STATE ══ */
-let events=JSON.parse(localStorage.getItem('sops_events')||'[]');
+let events=[]; // Firebase에서 로드
 let aId=null,curTab='active';
 let ptFilt='all',ptSrch='',ptPage=1;
 let cvFilt='all',cvSrch='',cvPage=1;
@@ -1639,32 +1581,33 @@ let cvEvId=null;
 const PPP=20;
 
 function save(){
-  localStorage.setItem('sops_events',JSON.stringify(events));
-  // Firebase에 현재 행사 저장
-  if(window._fbSave && aId){
+  // Firebase에만 저장 (localStorage 제거)
+  if(aId){
     const ev=getEv(aId);
-    if(ev) window._fbSave(ev);
+    if(ev){
+      const d=JSON.parse(JSON.stringify(ev));
+      delete d._origXlsx;
+      window._db.ref('events/'+String(ev.id)).set(d).catch(function(e){console.warn('fbSave:',e);});
+    }
   }
 }
 
-// 페이지 로드 시 Firebase에서 최신 데이터 불러오기
-// Firebase 로드 완료 시 데이터 불러오기
-function _onFbReady(){
-  const btn=document.getElementById('btn-fb-sync');
-  if(btn) btn.style.display='block';
-  window._fbLoadAll && window._fbLoadAll().then(function(fbEvs){
-    if(fbEvs && fbEvs.length>0){
-      events=fbEvs;
-      localStorage.setItem('sops_events',JSON.stringify(events));
-      renderSb();renderHistSb();
-      if(aId && getEv(aId)) loadDash(aId);
-      else if(cvEvId && getEv(cvEvId)) loadClientView(cvEvId);
-    } else if(events.length>0 && window._fbSave){
-      events.forEach(function(ev){window._fbSave(ev);});
-    }
-  }).catch(function(e){console.warn('fb load:',e);});
+// Firebase onValue: 실시간 리스너 — 모든 기기에서 즉시 반영
+function _initFbListener(){
+  var db = window._db;
+  if(!db){ setTimeout(_initFbListener, 100); return; }
+  db.ref('events').on('value', function(snap){
+    const val = snap.val();
+    events = val ? Object.values(val) : [];
+    renderSb && renderSb();
+    renderHistSb && renderHistSb();
+    if(aId && getEv(aId)) loadDash(aId);
+    if(cvEvId && getEv(cvEvId)) loadClientView(cvEvId);
+    const btn=document.getElementById('btn-fb-sync');
+    if(btn) btn.style.display='block';
+  });
 }
-window.addEventListener('fb-ready', _onFbReady);
+_initFbListener();
 
 function getEv(id){return events.find(e=>e.id===id);}
 function getCats(ev){return ev.cats||CATS.map(c=>({...c,items:[...c.items]}));}
@@ -1709,29 +1652,8 @@ function checkClientCode(){
   if(tryFind())return;
 
   // 못 찾으면 Firebase에서 최신 데이터 로드 후 재시도
-  if(window._fbLoadAll){
-    errEl.textContent='🔄 확인 중...';errEl.style.color='var(--blue)';errEl.style.display='block';
-    inp.disabled=true;
-    window._fbLoadAll().then(function(fbEvs){
-      inp.disabled=false;
-      if(fbEvs&&fbEvs.length){
-        events=fbEvs;
-        localStorage.setItem('sops_events',JSON.stringify(events));
-      }
-      if(!tryFind()){
-        errEl.textContent='유효하지 않은 행사 코드입니다';
-        errEl.style.color='var(--red)';
-        errEl.style.display='block';
-        inp.value='';inp.focus();
-      }
-    }).catch(function(){
-      inp.disabled=false;
-      errEl.textContent='유효하지 않은 행사 코드입니다';
-      errEl.style.color='var(--red)';
-      errEl.style.display='block';
-      inp.value='';inp.focus();
-    });
-  } else {
+  // onValue 리스너가 이미 최신 데이터를 유지하므로 재시도
+  if(!tryFind()){
     errEl.textContent='유효하지 않은 행사 코드입니다';
     errEl.style.color='var(--red)';
     errEl.style.display='block';
@@ -1842,22 +1764,15 @@ function cvRefresh(){
     clearTimeout(t._timer);
     t._timer=setTimeout(()=>{t.style.opacity='0';},2000);
   }
-  if(window._fbLoadAll){
-    window._fbLoadAll().then(function(fbEvs){
-      if(fbEvs&&fbEvs.length>0){
-        events=fbEvs;
-        localStorage.setItem('sops_events',JSON.stringify(events));
-      }
-      if(cvEvId&&getEv(cvEvId)) loadClientView(cvEvId);
-      showToast('✅ 새로고침 되었습니다.');
-    }).catch(function(){
-      if(cvEvId&&getEv(cvEvId)) loadClientView(cvEvId);
-      showToast('✅ 새로고침 되었습니다.');
-    });
-  } else {
+  window._db.ref('events').once('value', function(snap){
+    const val=snap.val();
+    events=val?Object.values(val):[];
     if(cvEvId&&getEv(cvEvId)) loadClientView(cvEvId);
     showToast('✅ 새로고침 되었습니다.');
-  }
+  }).catch(function(){
+    if(cvEvId&&getEv(cvEvId)) loadClientView(cvEvId);
+    showToast('✅ 새로고침 되었습니다.');
+  });
 }
 function loadClientView(id){
   const ev=getEv(id);if(!ev)return;
@@ -2980,7 +2895,7 @@ document.getElementById('btn-archive').onclick=()=>{
 document.getElementById('btn-delete').onclick=()=>{
   const ev=getEv(aId);if(!ev)return;
   if(!confirm(`"${ev.name}" 행사를 완전히 삭제하시겠습니까?`))return;
-  if(window._fbDelete)window._fbDelete(aId);events=events.filter(e=>e.id!==aId);save();aId=null;renderSb();renderHistSb();
+  window._db.ref('events/'+String(aId)).remove().catch(function(e){console.warn(e);});events=events.filter(e=>e.id!==aId);aId=null;renderSb();renderHistSb();
   const rem=events.filter(e=>!e.archived);
   if(rem.length)loadDash(rem[rem.length-1].id);
   else{document.getElementById('dashboard').style.display='none';document.getElementById('empty-state').style.display='flex';}
@@ -3024,7 +2939,7 @@ document.getElementById('modal-ok').onclick=()=>{
   };
   events.push(ev);
   save();
-  if(window._fbSave) window._fbSave(ev);
+  const _d=JSON.parse(JSON.stringify(ev));delete _d._origXlsx;window._db.ref('events/'+String(ev.id)).set(_d).catch(function(e){console.warn(e);});
   closeModal();
   renderSb();
   loadDash(ev.id);
@@ -3064,10 +2979,10 @@ window.addEventListener('load',checkMobile);
 
 /* ══ FIREBASE MIGRATE ══ */
 async function fbMigrate(){
-  if(!window._fbSave||!events.length){alert('데이터가 없거나 Firebase 준비 중입니다.');return;}
+  if(!events.length){alert('데이터가 없습니다.');return;}
   const btn=document.getElementById('btn-fb-sync');
   if(btn) btn.textContent='⏳...';
-  for(const ev of events) await window._fbSave(ev);
+  for(const ev of events){const _d=JSON.parse(JSON.stringify(ev));delete _d._origXlsx;await window._db.ref('events/'+String(ev.id)).set(_d);}
   if(btn) btn.textContent='☁️ Firebase 동기화';
   alert('✅ 동기화 완료!');
 }
